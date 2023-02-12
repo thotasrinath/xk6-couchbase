@@ -3,6 +3,6 @@ import xk6_couchbase from 'k6/x/couchbase';
 
 const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
 export default () => {
-    // syntax :: client.findOne("<db>", "<scope>", "<keyspace>", "<docId>");
-    client.findOne("test", "_default", "_default", "002wPJwiJArcUpz");
+    client.find("test", "_default", "select * from `_default` use keys \"00096zszpZaT47X\"");
+
 }

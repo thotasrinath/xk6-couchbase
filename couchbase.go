@@ -52,11 +52,12 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	return nil
 }
 
-func (c *Client) Find(bucketName, scope, query string) *gocb.QueryResult {
+func (c *Client) Find(bucketName, scope, query string) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
 	bucketScope := bucket.Scope(scope)
 
@@ -66,22 +67,44 @@ func (c *Client) Find(bucketName, scope, query string) *gocb.QueryResult {
 	)
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
-	return queryResult
+	// Print each found Row
+	for queryResult.Next() {
+		var result interface{}
+		err := queryResult.Row(&result)
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		log.Println(result)
+	}
+
+	return nil
 }
 
-func (c *Client) FindOne(bucketName, scope, collection, docId string) *gocb.GetResult {
+func (c *Client) FindOne(bucketName, scope, collection, docId string) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
 	bucketScope := bucket.Scope(scope)
 
 	getResult, err := bucketScope.Collection(collection).Get(docId, nil)
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
 
-	return getResult
+	var result interface{}
+	err = getResult.Content(&result)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	log.Println("Printing", result)
+
+	return nil
 }
