@@ -5,7 +5,7 @@ const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
 export default () => {
 
     let doc = {
-        correlationId: `test--mongodb`,
+        correlationId: `test--couchbase`,
         title: 'Perf test experiment',
         url: 'example.com',
         locale: 'en',
