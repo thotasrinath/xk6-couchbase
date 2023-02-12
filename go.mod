@@ -1,4 +1,4 @@
-module xk6-couchbase
+module github.com/thotasrinath/xk6-couchbase
 
 go 1.20
 
