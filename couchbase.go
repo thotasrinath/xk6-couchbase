@@ -1,6 +1,7 @@
 package xk6_couchbase
 
 import (
+	"fmt"
 	"github.com/couchbase/gocb/v2"
 	k6modules "go.k6.io/k6/js/modules"
 	"log"
@@ -35,7 +36,7 @@ func (*CouchBase) NewClient(connectionString, username, password string) interfa
 
 }
 
-func (c *Client) Insert(bucketName, scope, collection, id string, doc map[string]string) error {
+func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
@@ -43,10 +44,44 @@ func (c *Client) Insert(bucketName, scope, collection, id string, doc map[string
 		return err
 	}
 	col := bucket.Scope(scope).Collection(collection)
-	_, err = col.Insert(id, doc, nil)
+	_, err = col.Insert(docId, doc, nil)
 	if err != nil {
 		log.Fatal(err)
 		return err
 	}
 	return nil
+}
+
+func (c *Client) Find(bucketName, scope, query string) *gocb.QueryResult {
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	bucketScope := bucket.Scope(scope)
+
+	queryResult, err := bucketScope.Query(
+		fmt.Sprintf(query),
+		&gocb.QueryOptions{},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return queryResult
+}
+
+func (c *Client) FindOne(bucketName, scope, collection, docId string) *gocb.GetResult {
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	bucketScope := bucket.Scope(scope)
+
+	getResult, err := bucketScope.Collection(collection).Get(docId, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return getResult
 }
