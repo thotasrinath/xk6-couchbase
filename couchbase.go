@@ -35,7 +35,7 @@ func (*CouchBase) NewClient(connectionString, username, password string) interfa
 
 }
 
-func (c *Client) Insert(bucketName, scope, collection string, doc map[string]string) error {
+func (c *Client) Insert(bucketName, scope, collection, id string, doc map[string]string) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
@@ -43,7 +43,7 @@ func (c *Client) Insert(bucketName, scope, collection string, doc map[string]str
 		return err
 	}
 	col := bucket.Scope(scope).Collection(collection)
-	_, err = col.Insert("", doc, nil)
+	_, err = col.Insert(id, doc, nil)
 	if err != nil {
 		log.Fatal(err)
 		return err
