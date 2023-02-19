@@ -14,8 +14,15 @@ func init() {
 
 type CouchBase struct{}
 
+type Doc struct {
+	Item string `json:"item"`
+}
+
 type Client struct {
 	client *gocb.Cluster
+	items  []gocb.BulkOp
+	count  int
+	batch  int
 }
 
 func (*CouchBase) NewClient(connectionString, username, password string) interface{} {
@@ -32,7 +39,12 @@ func (*CouchBase) NewClient(connectionString, username, password string) interfa
 		return err
 	}
 
-	return &Client{client: cluster}
+	client := &Client{client: cluster, batch: 500}
+
+	cClients := GetCouchClients()
+	cClients.clients = append(cClients.clients, client)
+
+	return client
 
 }
 
@@ -50,6 +62,71 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 		return err
 	}
 	return nil
+}
+
+func (c *Client) InsertBulk(bucketName, scope, collection, docId string, doc any) error {
+
+	if len(c.items) <= c.count {
+		c.items = append(c.items, &gocb.InsertOp{ID: docId, Value: doc})
+	} else {
+		c.items[c.count] = &gocb.InsertOp{ID: docId, Value: doc}
+	}
+
+	c.count++
+
+	if c.count%c.batch == 0 {
+		bucket := c.client.Bucket(bucketName)
+		err := bucket.WaitUntilReady(5*time.Second, nil)
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		col := bucket.Scope(scope).Collection(collection)
+		err = col.Do(c.items, &gocb.BulkOpOptions{})
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+
+		c.count = 0
+	}
+
+	return nil
+}
+
+func (*CouchBase) FlushRemOnBatch(bucketName, scope, collection string) error {
+	clients := GetCouchClients().clients
+
+	for _, c := range clients {
+		if c.count > 0 {
+			log.Println("Flushed remaining items to couchbase")
+			items := c.items[0:c.count]
+			bucket := c.client.Bucket(bucketName)
+			err := bucket.WaitUntilReady(5*time.Second, nil)
+			if err != nil {
+				log.Fatal(err)
+				return err
+			}
+			col := bucket.Scope(scope).Collection(collection)
+			err = col.Do(items, &gocb.BulkOpOptions{})
+			if err != nil {
+				log.Fatal(err)
+				return err
+			}
+
+			c.count = 0
+			//c.client.Close(&gocb.ClusterCloseOptions{})
+		}
+
+	}
+
+	return nil
+}
+
+func (c *Client) SetBatchCount(batch int) {
+	log.Println("Batch count is set to", batch)
+	c.batch = batch
+
 }
 
 func (c *Client) Find(bucketName, scope, query string) error {
