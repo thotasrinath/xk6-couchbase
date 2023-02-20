@@ -90,6 +90,30 @@ func (c *Client) InsertBulk(bucketName, scope, collection, docId string, doc any
 	return nil
 }
 
+func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[string]any) error {
+
+	var batchItems []gocb.BulkOp
+
+	for k, v := range docs {
+		batchItems = append(batchItems, &gocb.InsertOp{ID: k, Value: v})
+	}
+
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	col := bucket.Scope(scope).Collection(collection)
+	err = col.Do(batchItems, &gocb.BulkOpOptions{Timeout: time.Minute})
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	return nil
+}
+
 func (*CouchBase) FlushRemOnBatch(bucketName, scope, collection string) error {
 	clients := GetCouchClients().clients
 
