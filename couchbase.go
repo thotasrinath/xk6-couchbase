@@ -52,6 +52,30 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	return nil
 }
 
+func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[string]any) error {
+
+	var batchItems []gocb.BulkOp
+
+	for k, v := range docs {
+		batchItems = append(batchItems, &gocb.InsertOp{ID: k, Value: v})
+	}
+
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	col := bucket.Scope(scope).Collection(collection)
+	err = col.Do(batchItems, &gocb.BulkOpOptions{Timeout: 3 * time.Second})
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	return nil
+}
+
 func (c *Client) Find(bucketName, scope, query string) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
