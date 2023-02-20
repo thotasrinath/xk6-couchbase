@@ -54,10 +54,11 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 
 func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[string]any) error {
 
-	var batchItems []gocb.BulkOp
-
+	batchItems := make([]gocb.BulkOp, len(docs))
+	index := 0
 	for k, v := range docs {
-		batchItems = append(batchItems, &gocb.InsertOp{ID: k, Value: v})
+		batchItems[index] = &gocb.InsertOp{ID: k, Value: v}
+		index++
 	}
 
 	bucket := c.client.Bucket(bucketName)
