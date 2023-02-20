@@ -78,7 +78,7 @@ func (c *Client) InsertBulk(bucketName, scope, collection, docId string, doc any
 			return err
 		}
 		col := bucket.Scope(scope).Collection(collection)
-		err = col.Do(c.items, &gocb.BulkOpOptions{})
+		err = col.Do(c.items, &gocb.BulkOpOptions{Timeout: 5 * time.Second})
 		if err != nil {
 			log.Fatal(err)
 			return err
