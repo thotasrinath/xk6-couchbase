@@ -14,10 +14,6 @@ func init() {
 
 type CouchBase struct{}
 
-type Doc struct {
-	Item string `json:"item"`
-}
-
 type Client struct {
 	client *gocb.Cluster
 	items  []gocb.BulkOp
@@ -39,7 +35,7 @@ func (*CouchBase) NewClient(connectionString, username, password string) interfa
 		return err
 	}
 
-	client := &Client{client: cluster, batch: 500}
+	client := &Client{client: cluster, batch: 50}
 
 	cClients := GetCouchClients()
 	cClients.clients = append(cClients.clients, client)
@@ -99,7 +95,6 @@ func (*CouchBase) FlushRemOnBatch(bucketName, scope, collection string) error {
 
 	for _, c := range clients {
 		if c.count > 0 {
-			log.Println("Flushed remaining items to couchbase")
 			items := c.items[0:c.count]
 			bucket := c.client.Bucket(bucketName)
 			err := bucket.WaitUntilReady(5*time.Second, nil)

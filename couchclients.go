@@ -1,7 +1,7 @@
 package xk6_couchbase
 
 import (
-	"fmt"
+	"log"
 	"sync"
 )
 
@@ -18,13 +18,9 @@ func GetCouchClients() *CouchClients {
 		lock.Lock()
 		defer lock.Unlock()
 		if couchClients == nil {
-			fmt.Println("Creating CouchClients instance now.")
+			log.Println("Creating CouchClients instance now.")
 			couchClients = &CouchClients{}
-		} else {
-			fmt.Println("CouchClients instance already created.")
 		}
-	} else {
-		fmt.Println("CouchClients instance already created.")
 	}
 
 	return couchClients
