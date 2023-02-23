@@ -1,11 +1,11 @@
 import xk6_couchbase from 'k6/x/couchbase';
-
-var count = 0;
+import exec from 'k6/execution';
 const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
+
 export default () => {
 
-    client.insert("test", "_default", "_default", count.toString(), getRecord(count.toString()));
-    count++;
+    var docId= exec.scenario.iterationInTest;
+    client.insert("test", "_default", "_default", docId.toString(), getRecord(docId.toString()));
 }
 
 function randomDate(start, end, startHour, endHour) {
