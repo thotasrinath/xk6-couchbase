@@ -132,3 +132,35 @@ func (c *Client) FindOne(bucketName, scope, collection, docId string) (any, erro
 
 	return result, nil
 }
+
+func (c *Client) FindByPreparedStmt(bucketName, scope, query string, params ...interface{}) (any, error) {
+	var result interface{}
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return result, err
+	}
+	bucketScope := bucket.Scope(scope)
+
+	queryResult, err := bucketScope.Query(
+		query,
+		&gocb.QueryOptions{Adhoc: true,
+			PositionalParameters: params},
+	)
+	if err != nil {
+		log.Fatal(err)
+		return result, err
+	}
+	// Print each found Row
+	for queryResult.Next() {
+
+		err := queryResult.Row(&result)
+		if err != nil {
+			log.Fatal(err)
+			return result, err
+		}
+	}
+
+	return result, nil
+}
