@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/couchbase/gocb/v2 v2.6.0
-	go.k6.io/k6 v0.42.0
+	go.k6.io/k6 v0.43.0
 )
 
 require (
