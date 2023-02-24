@@ -77,17 +77,10 @@ func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[stri
 	return nil
 }
 
-func (c *Client) Find(bucketName, scope, query string) (any, error) {
+func (c *Client) Find(query string) (any, error) {
 	var result interface{}
-	bucket := c.client.Bucket(bucketName)
-	err := bucket.WaitUntilReady(5*time.Second, nil)
-	if err != nil {
-		log.Fatal(err)
-		return result, err
-	}
-	bucketScope := bucket.Scope(scope)
 
-	queryResult, err := bucketScope.Query(
+	queryResult, err := c.client.Query(
 		fmt.Sprintf(query),
 		&gocb.QueryOptions{},
 	)
@@ -133,17 +126,9 @@ func (c *Client) FindOne(bucketName, scope, collection, docId string) (any, erro
 	return result, nil
 }
 
-func (c *Client) FindByPreparedStmt(bucketName, scope, query string, params ...interface{}) (any, error) {
+func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, error) {
 	var result interface{}
-	bucket := c.client.Bucket(bucketName)
-	err := bucket.WaitUntilReady(5*time.Second, nil)
-	if err != nil {
-		log.Fatal(err)
-		return result, err
-	}
-	bucketScope := bucket.Scope(scope)
-
-	queryResult, err := bucketScope.Query(
+	queryResult, err := c.client.Query(
 		query,
 		&gocb.QueryOptions{Adhoc: true,
 			PositionalParameters: params},

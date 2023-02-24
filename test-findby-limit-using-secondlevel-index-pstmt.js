@@ -1,11 +1,9 @@
 import xk6_couchbase from 'k6/x/couchbase';
 
 /**
- * Index creation on tradeDate
+ * Index creation on partyTradeDate
  *
- * CREATE INDEX `global_myDateIdx`
- *     ON `test` (STR_TO_MILLIS(`tradeDate`))
- *     USING GSI;
+ * CREATE INDEX ix2 ON test (DISTINCT ARRAY (STR_TO_MILLIS(er.meta.partyTradeDate)) FOR er IN trade.party END) USING GSI with {"num_replica": 2};
  */
 
 const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
@@ -17,10 +15,9 @@ export default () => {
 
 
     var query = 'select *\n' +
-        'from test._default._default t\n' +
-        'where STR_TO_MILLIS(t.tradeDate) >= STR_TO_MILLIS($1)\n' +
-        '  and STR_TO_MILLIS(t.tradeDate) <= STR_TO_MILLIS($2)\n' +
-        'limit 10;'
+        'from test t\n' +
+        'where any v in t.trade.party satisfies STR_TO_MILLIS(v.meta.partyTradeDate) >= STR_TO_MILLIS($1)\n' +
+        '    and STR_TO_MILLIS(v.meta.partyTradeDate) <= STR_TO_MILLIS($2) END limit 10;'
 
     var res = client.findByPreparedStmt(query, startDate.toISOString(), endDate.toISOString());
 
