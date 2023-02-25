@@ -7,7 +7,8 @@ K6 extension to perform tests on couchbase.
 - Supports inserting a document.
 - Supports Batch insertion.
 - Support findOne (Fetch by primary key)
-- Support checking query performance
+- Testing query performance
+- Prepared statement query performance
 
 ## Examples: 
 ### Document Insertion Test
@@ -95,7 +96,8 @@ import xk6_couchbase from 'k6/x/couchbase';
 const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
 export default () => {
     // syntax :: client.findOne("<db>", "<scope>", "<keyspace>", "<docId>");
-    client.findOne("test", "_default", "_default", "002wPJwiJArcUpz");
+    var res = client.findOne("test", "_default", "_default", "002wPJwiJArcUpz");
+    console.log(res);
 }
 
 ```
@@ -107,9 +109,23 @@ import xk6_couchbase from 'k6/x/couchbase';
 
 const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
 export default () => {
-    client.find("test", "_default", "select * from `_default` use keys \"00096zszpZaT47X\"");
+    var res = client.find("select * from test._default._default  use keys \"00096zszpZaT47X\"");
+
+    //console.log(res);
 
 }
+```
+
+### Query using a prepared statement 
+```js
+import xk6_couchbase from 'k6/x/couchbase';
 
 
+const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
+export default () => {
+    var res = client.findByPreparedStmt("select * from test._default._default  use keys \"00096zszpZaT47X\"");
+
+    //console.log(res);
+
+}
 ```
