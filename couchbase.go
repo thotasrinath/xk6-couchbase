@@ -3,6 +3,7 @@ package xk6_couchbase
 import (
 	"fmt"
 	"github.com/couchbase/gocb/v2"
+	"github.com/couchbase/gocb/v2/search"
 	k6modules "go.k6.io/k6/js/modules"
 	"log"
 	"time"
@@ -16,6 +17,12 @@ type CouchBase struct{}
 
 type Client struct {
 	client *gocb.Cluster
+}
+
+type SearchHits struct {
+	docID  string
+	score  float64
+	fields interface{}
 }
 
 func (*CouchBase) NewClient(connectionString, username, password string) interface{} {
@@ -74,6 +81,32 @@ func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[stri
 		return err
 	}
 
+	return nil
+}
+
+func (c *Client) Upsert(bucketName, scope, collection, docId string, doc map[string]interface{}) error {
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	col := bucket.Scope(scope).Collection(collection)
+
+	mops := make([]gocb.MutateInSpec, len(doc))
+	index := 0
+	for k, v := range doc {
+		mops[index] = gocb.UpsertSpec(k, v, &gocb.UpsertSpecOptions{})
+		index++
+	}
+
+	_, err = col.MutateIn(docId, mops, &gocb.MutateInOptions{
+		Timeout: 10050 * time.Millisecond,
+	})
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
 	return nil
 }
 
@@ -148,4 +181,52 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	}
 
 	return result, nil
+}
+
+func (c *Client) Search(indexName, matchString string, limit uint32, searchFields []string) (interface{}, error) {
+	err := c.client.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	matchResult, err1 := c.client.SearchQuery(
+		indexName,
+		search.NewMatchQuery(matchString),
+		&gocb.SearchOptions{
+			Limit:  limit,
+			Fields: searchFields,
+		},
+	)
+	if err1 != nil {
+		log.Fatal(err1)
+		return nil, err1
+	}
+
+	searchHits := make([]SearchHits, 1)
+	for matchResult.Next() {
+		row := matchResult.Row()
+		docID := row.ID
+		score := row.Score
+
+		var fields interface{}
+		err := row.Fields(&fields)
+		if err != nil {
+			return nil, err
+		}
+		searchHits[0] = SearchHits{docID: docID, score: score, fields: fields}
+		//fmt.Printf("Document ID: %s, search score: %f, fields included in result: %v\n", docID, score, fields)
+		//fmt.Println(searchHits)
+
+	}
+
+	// always check for errors after iterating
+	err = matchResult.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(searchHits)
+
+	return searchHits, nil
 }
