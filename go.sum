@@ -15,6 +15,8 @@ github.com/dlclark/regexp2 v1.7.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnm
 github.com/dop251/goja v0.0.0-20211022113120-dc8c55024d06/go.mod h1:R9ET47fwRVRPZnOGvHxxhuZcbrMCuiqOz3Rlrh4KSnk=
 github.com/dop251/goja v0.0.0-20221106173738-3b8a68ca89b4 h1:arM6Tq1Ba+a9FWuq3S6Qgrfd5MD0slQdMnCKI2VclFg=
 github.com/dop251/goja v0.0.0-20221106173738-3b8a68ca89b4/go.mod h1:yRkwfj0CBpOGre+TwBsqPV0IH0Pk73e4PXJOeNDboGs=
+github.com/dop251/goja v0.0.0-20230128084908-78b980256d04 h1:iQQgQ1wBsFmpu6OjINCY2ekdknKNNpxO/GOzzww2Amk=
+github.com/dop251/goja v0.0.0-20230128084908-78b980256d04/go.mod h1:yRkwfj0CBpOGre+TwBsqPV0IH0Pk73e4PXJOeNDboGs=
 github.com/dop251/goja_nodejs v0.0.0-20210225215109-d91c329300e7/go.mod h1:hn7BA7c8pLvoGndExHudxTDKZ84Pyvv+90pbBjbTz0Y=
 github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d/go.mod h1:DngW8aVqWbuLRMHItjPUyqdj+HWPvnQe8V8y1nDpIbM=
 github.com/fatih/color v1.13.0 h1:8LOYc1KYPPmyKMuN8QV2DNRWNbLo6LZ0iLs8+mlH53w=
@@ -98,6 +100,8 @@ github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PK
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.k6.io/k6 v0.42.0 h1:TXYyaNPI5GuX2k+r0EDqawdAkdU2Kuxl68GpBbwSkUk=
 go.k6.io/k6 v0.42.0/go.mod h1:BY6vVmsNSaetHmPqQ8D6VMJJRptzwevdSpURQmSkrMQ=
+go.k6.io/k6 v0.43.0 h1:61cS5WZKakkox3r0+ZKS1w1qSiSG9z7BQ5tBURSyuKw=
+go.k6.io/k6 v0.43.0/go.mod h1:eViUvOYYvW9ckMoQDv4qvOVhwrYFqhUm1i+PK/VFBmI=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=
