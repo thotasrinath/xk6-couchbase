@@ -203,7 +203,7 @@ func (c *Client) Search(indexName, matchString string, limit uint32, searchField
 		return nil, err1
 	}
 
-	searchHits := make([]SearchHits, 1)
+	var searchHits []SearchHits
 	for matchResult.Next() {
 		row := matchResult.Row()
 		docID := row.ID
@@ -214,7 +214,7 @@ func (c *Client) Search(indexName, matchString string, limit uint32, searchField
 		if err != nil {
 			return nil, err
 		}
-		searchHits[0] = SearchHits{docID: docID, score: score, fields: fields}
+		searchHits = append(searchHits, SearchHits{docID: docID, score: score, fields: fields})
 		//fmt.Printf("Document ID: %s, search score: %f, fields included in result: %v\n", docID, score, fields)
 		//fmt.Println(searchHits)
 
@@ -225,8 +225,6 @@ func (c *Client) Search(indexName, matchString string, limit uint32, searchField
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println(searchHits)
 
 	return searchHits, nil
 }
