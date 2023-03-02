@@ -2,11 +2,12 @@ package xk6_couchbase
 
 import (
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/couchbase/gocb/v2"
 	"github.com/couchbase/gocb/v2/search"
 	k6modules "go.k6.io/k6/js/modules"
-	"log"
-	"time"
 )
 
 func init() {
@@ -114,7 +115,7 @@ func (c *Client) Find(query string) (any, error) {
 	var result interface{}
 
 	queryResult, err := c.client.Query(
-		fmt.Sprintf(query),
+		query,
 		&gocb.QueryOptions{},
 	)
 	if err != nil {
@@ -183,7 +184,7 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	return result, nil
 }
 
-func (c *Client) Search(indexName, matchString string, limit uint32, searchFields []string) (interface{}, error) {
+func (c *Client) Search(indexName, matchString string, searchFields []string, limit uint32) (interface{}, error) {
 	err := c.client.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -227,4 +228,49 @@ func (c *Client) Search(indexName, matchString string, limit uint32, searchField
 	}
 
 	return searchHits, nil
+}
+
+func (c *Client) SearchAndPrint(indexName, matchString string, searchFields []string, limit uint32) error {
+	err := c.client.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	matchResult, err1 := c.client.SearchQuery(
+		indexName,
+		search.NewMatchQuery(matchString),
+		&gocb.SearchOptions{
+			Limit:  limit,
+			Fields: searchFields,
+		},
+	)
+	if err1 != nil {
+		log.Fatal(err1)
+		return err1
+	}
+
+	for matchResult.Next() {
+		row := matchResult.Row()
+		docID := row.ID
+		score := row.Score
+
+		var fields interface{}
+		err := row.Fields(&fields)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Document ID: %s, search score: %f, fields included in result: %v\n", docID, score, fields)
+		//fmt.Println(searchHits)
+
+	}
+
+	// always check for errors after iterating
+	err = matchResult.Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
