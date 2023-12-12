@@ -52,6 +52,31 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	return nil
 }
 
+func (c *Client) Remove(bucketName, scope, collection, docId string) error {
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	
+	col := bucket.Scope(scope).Collection(collection)
+
+	// Remove with Durability
+	_, err = col.Remove(docId, &gocb.RemoveOptions{
+		Timeout:         100 * time.Millisecond,
+		DurabilityLevel: gocb.DurabilityLevelMajority,
+	})
+	if err != nil {
+		panic(err)
+	}
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	return nil
+}
+
 func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[string]any) error {
 
 	batchItems := make([]gocb.BulkOp, len(docs))
