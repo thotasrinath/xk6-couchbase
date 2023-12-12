@@ -6,7 +6,8 @@ K6 extension to perform tests on couchbase.
 
 - Supports inserting a document.
 - Supports Batch insertion.
-- Support findOne (Fetch by primary key)
+- Supports findOne (Fetch by primary key)
+- Supports deleting a document by id
 - Testing query performance
 - Prepared statement query performance
 
@@ -98,6 +99,19 @@ export default () => {
     // syntax :: client.findOne("<db>", "<scope>", "<keyspace>", "<docId>");
     var res = client.findOne("test", "_default", "_default", "002wPJwiJArcUpz");
     console.log(res);
+}
+
+```
+
+### Document Deletion Test
+```js
+import xk6_couchbase from 'k6/x/couchbase';
+
+
+const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
+export default () => {
+
+    client.remove("test", "_default", "_default", "002wPJwiJArcUpz", doc);
 }
 
 ```
