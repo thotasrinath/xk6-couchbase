@@ -2,10 +2,11 @@ package xk6_couchbase
 
 import (
 	"fmt"
-	"github.com/couchbase/gocb/v2"
-	k6modules "go.k6.io/k6/js/modules"
 	"log"
 	"time"
+
+	"github.com/couchbase/gocb/v2"
+	k6modules "go.k6.io/k6/js/modules"
 )
 
 func init() {
@@ -19,7 +20,6 @@ type Client struct {
 }
 
 func (*CouchBase) NewClient(connectionString, username, password string) interface{} {
-
 	// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
 	cluster, err := gocb.Connect("couchbase://"+connectionString, gocb.ClusterOptions{
 		Authenticator: gocb.PasswordAuthenticator{
@@ -33,7 +33,6 @@ func (*CouchBase) NewClient(connectionString, username, password string) interfa
 	}
 
 	return &Client{client: cluster}
-
 }
 
 func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) error {
@@ -59,7 +58,7 @@ func (c *Client) Remove(bucketName, scope, collection, docId string) error {
 		log.Fatal(err)
 		return err
 	}
-	
+
 	col := bucket.Scope(scope).Collection(collection)
 
 	// Remove with Durability
@@ -78,7 +77,6 @@ func (c *Client) Remove(bucketName, scope, collection, docId string) error {
 }
 
 func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[string]any) error {
-
 	batchItems := make([]gocb.BulkOp, len(docs))
 	index := 0
 	for k, v := range docs {
@@ -155,8 +153,10 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	var result interface{}
 	queryResult, err := c.client.Query(
 		query,
-		&gocb.QueryOptions{Adhoc: true,
-			PositionalParameters: params},
+		&gocb.QueryOptions{
+			Adhoc:                true,
+			PositionalParameters: params,
+		},
 	)
 	if err != nil {
 		log.Fatal(err)
