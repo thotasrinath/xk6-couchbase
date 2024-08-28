@@ -57,6 +57,11 @@ function makeId(length) {
 }
 
 ```
+##### Below is the example commands to test the script
+```bash
+# Update examples/test-insert.js with cluster credentials and bucket name
+ ./xk6-couchbase run --vus 10 --duration 30s examples/test-insert.js
+```
 
 ### Batch Insert Documents
 ```js
