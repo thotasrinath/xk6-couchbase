@@ -11,7 +11,21 @@ K6 extension to perform tests on couchbase.
 - Testing query performance
 - Prepared statement query performance
 
-## Examples: 
+## Build Instructions
+
+- Install xk6 using (go install go.k6.io/xk6/cmd/xk6@latest)
+### For Development
+```shell
+git clone git@github.com:thotasrinath/xk6-couchbase.git
+cd xk6-couchbase
+xk6 build --output xk6-couchbase --with github.com/thotasrinath/xk6-couchbase=.
+```
+### For Use
+```shell
+xk6 build --with github.com/thotasrinath/xk6-couchbase@latest
+```
+
+## Examples
 ### Document Insertion Test
 ```js
 import xk6_couchbase from 'k6/x/couchbase';
