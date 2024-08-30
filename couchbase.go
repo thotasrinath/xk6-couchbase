@@ -51,6 +51,22 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	return nil
 }
 
+func (c *Client) Upsert(bucketName, scope, collection, docId string, doc any) error {
+	bucket := c.client.Bucket(bucketName)
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	col := bucket.Scope(scope).Collection(collection)
+	_, err = col.Upsert(docId, doc, nil)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	return nil
+}
+
 func (c *Client) Remove(bucketName, scope, collection, docId string) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
