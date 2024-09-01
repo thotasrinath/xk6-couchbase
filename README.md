@@ -8,6 +8,7 @@ K6 extension to perform tests on couchbase.
 - Supports Batch insertion.
 - Supports findOne (Fetch by primary key)
 - Supports deleting a document by id
+- Supports upserts
 - Testing query performance
 - Prepared statement query performance
 
