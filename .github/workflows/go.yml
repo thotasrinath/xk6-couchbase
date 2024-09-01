@@ -1,0 +1,28 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Go
+
+on:
+  push:
+    branches: ["master" ]
+  pull_request:
+    branches: ["master" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+    - name: Install dependencies
+      run: go install go.k6.io/xk6/cmd/xk6@latest
+    - name: Build
+      run: xk6 build --output xk6-couchbase --with github.com/thotasrinath/xk6-couchbase=.
+    - name: List Binary
+      run: ls .
