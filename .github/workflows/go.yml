@@ -24,3 +24,5 @@ jobs:
       run: go install go.k6.io/xk6/cmd/xk6@latest
     - name: Build
       run: xk6 build --output xk6-couchbase --with github.com/thotasrinath/xk6-couchbase=.
+    - name: List Binary
+      run: ls .
