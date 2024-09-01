@@ -5,9 +5,9 @@ name: Go
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "12-can-this-be-integratd-with-github-actions","master" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "12-can-this-be-integratd-with-github-actions","master" ]
 
 jobs:
 
