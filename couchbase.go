@@ -2,7 +2,6 @@ package xk6_couchbase
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/couchbase/gocb/v2"
@@ -28,7 +27,7 @@ func (*CouchBase) NewClient(connectionString, username, password string) interfa
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Client Connection: %v", err)
 		return err
 	}
 
@@ -39,13 +38,13 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Insert Operation: %v", err)
 		return err
 	}
 	col := bucket.Scope(scope).Collection(collection)
 	_, err = col.Insert(docId, doc, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Insert Operation: %v", err)
 		return err
 	}
 	return nil
@@ -55,13 +54,13 @@ func (c *Client) Upsert(bucketName, scope, collection, docId string, doc any) er
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Upsert Operation: %v", err)
 		return err
 	}
 	col := bucket.Scope(scope).Collection(collection)
 	_, err = col.Upsert(docId, doc, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Upsert Operation: %v", err)
 		return err
 	}
 	return nil
@@ -71,7 +70,7 @@ func (c *Client) Remove(bucketName, scope, collection, docId string) error {
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Remove Operation: %v", err)
 		return err
 	}
 
@@ -83,10 +82,7 @@ func (c *Client) Remove(bucketName, scope, collection, docId string) error {
 		DurabilityLevel: gocb.DurabilityLevelMajority,
 	})
 	if err != nil {
-		panic(err)
-	}
-	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Remove Operation: %v", err)
 		return err
 	}
 	return nil
@@ -103,13 +99,13 @@ func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[stri
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during InsertBatch Operation: %v", err)
 		return err
 	}
 	col := bucket.Scope(scope).Collection(collection)
 	err = col.Do(batchItems, &gocb.BulkOpOptions{Timeout: 3 * time.Second})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during InsertBatch Operation: %v", err)
 		return err
 	}
 
@@ -124,7 +120,7 @@ func (c *Client) Find(query string) (any, error) {
 		&gocb.QueryOptions{},
 	)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during Find Operation: %v", err)
 		return result, err
 	}
 	// Print each found Row
@@ -132,7 +128,7 @@ func (c *Client) Find(query string) (any, error) {
 
 		err := queryResult.Row(&result)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Errorf("Error during Find Operation: %v", err)
 			return result, err
 		}
 	}
@@ -145,20 +141,20 @@ func (c *Client) FindOne(bucketName, scope, collection, docId string) (any, erro
 	bucket := c.client.Bucket(bucketName)
 	err := bucket.WaitUntilReady(5*time.Second, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during FindOne Operation: %v", err)
 		return result, err
 	}
 	bucketScope := bucket.Scope(scope)
 
 	getResult, err := bucketScope.Collection(collection).Get(docId, nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during FindOne Operation: %v", err)
 		return result, err
 	}
 
 	err = getResult.Content(&result)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during FindOne Operation: %v", err)
 		return result, err
 	}
 
@@ -175,7 +171,7 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 		},
 	)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Errorf("Error during FindByPreparedStmt Operation: %v", err)
 		return result, err
 	}
 	// Print each found Row
@@ -183,7 +179,7 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 
 		err := queryResult.Row(&result)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Errorf("Error during FindByPreparedStmt Operation: %v", err)
 			return result, err
 		}
 	}
