@@ -42,7 +42,6 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	col := bucket.Scope(scope).Collection(collection)
 	_, err = col.Insert(docId, doc, nil)
 	if err != nil {
-		// fmt.Errorf("Error during Insert Operation: %v", err)
 		return err
 	}
 	return nil
