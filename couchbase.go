@@ -64,7 +64,8 @@ func (*CouchBase) NewClient(connectionString string, username string, password s
 func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 	bucket, found := c.bucketsConnections.Load(bucketName)
 	if !found || bucket == nil {
-		fmt.Printf("bucket %s not found, client instance: %v\n", bucketName, c)
+		// TODO: Replace printfs with logrus (used in other extensions..)
+		// fmt.Printf("bucket %s not found, client instance: %v\n", bucketName, c)
 		// Create bucket connections
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -74,18 +75,18 @@ func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 		}
 
 		newBucket := c.cluster.Bucket(bucketName)
-		fmt.Printf("bucket %s connected\n", bucketName)
+		// fmt.Printf("bucket %s connected\n", bucketName)
 		err := newBucket.WaitUntilReady(5*time.Second, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to wait for bucket %s. Err: %w", bucketName, err)
 		}
-		fmt.Printf("bucket %s ready\n", bucketName)
+		// fmt.Printf("bucket %s ready\n", bucketName)
 		c.bucketsConnections.Store(bucketName, newBucket)
 		bucket, loaded := c.bucketsConnections.Load(bucketName)
 		if !loaded {
 			return nil, fmt.Errorf("failed to load bucket %s", bucketName)
 		}
-		fmt.Printf("bucket %s loaded %v\n", bucket.(*gocb.Bucket).Name(), loaded)
+		// fmt.Printf("bucket %s loaded %v\n", bucket.(*gocb.Bucket).Name(), loaded)
 		return bucket.(*gocb.Bucket), nil
 	}
 	return bucket.(*gocb.Bucket), nil
