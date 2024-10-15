@@ -90,7 +90,6 @@ func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 
 func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) error {
 	bucket, err := c.getBucket(bucketName)
-	// bucket := c.client.Bucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for insert. Err: %w", err)
 	}
