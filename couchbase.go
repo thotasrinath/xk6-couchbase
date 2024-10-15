@@ -40,9 +40,12 @@ func getCouchbaseInstance(connectionString string, username string, password str
 					Password: password,
 				},
 			})
+
 			if err != nil {
 				errz = err
+				return
 			}
+
 			singletonClient = &Client{cluster: cluster}
 		},
 	)
