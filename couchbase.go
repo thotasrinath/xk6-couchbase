@@ -327,36 +327,3 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 
 	return result, nil
 }
-
-// // TODO: Use gotdotenv or viper pkgs.
-// func getenvStringValue(key string) (string, error) {
-// 	value := os.Getenv(key)
-// 	if value == "" {
-// 		return value, errors.New("failed to getenv string value")
-// 	}
-// 	return value, nil
-// }
-
-// func getenvDurationValue(key string, defaultValue time.Duration) time.Duration {
-// 	value, err := getenvStringValue(key)
-// 	if err != nil {
-// 		return defaultValue
-// 	}
-// 	duration, err := time.ParseDuration(value)
-// 	if err != nil {
-// 		return defaultValue
-// 	}
-// 	return duration
-// }
-
-// func getenvBoolValue(key string, defaultValue bool) bool {
-// 	s, err := getenvStringValue(key)
-// 	if err != nil {
-// 		return defaultValue
-// 	}
-// 	value, err := strconv.ParseBool(s)
-// 	if err != nil {
-// 		return defaultValue
-// 	}
-// 	return value
-// }
