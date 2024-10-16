@@ -29,7 +29,8 @@ xk6 build --with github.com/thotasrinath/xk6-couchbase@latest
 #### Note
 
 By default, a new connection is created per VU.
-To share the connection across multiple queries set the environment variable K6_COUCHBASE_DO_CONN_PER_VU to true
+To share the connection across multiple queries set the environment variable XK6_COUCHBASE_DO_CONN_PER_VU to true
+Bucket WaitUntilReady timeout can be set using XK6_COUCHBASE_BUCKET_READINESS_TIMEOUT=20s
 
 ## Examples
 ### Document Insertion Test

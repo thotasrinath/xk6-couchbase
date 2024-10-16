@@ -16,7 +16,11 @@ func init() {
 	k6modules.Register("k6/x/couchbase", new(CouchBase))
 }
 
-const doConnectionPerVUEnvKey = "K6_COUCHBASE_DO_CONN_PER_VU"
+const (
+	// TODO: Define these as API constructs. Const/env variables to have backward compatibility.
+	doConnectionPerVUEnvKey = "XK6_COUCHBASE_DO_CONN_PER_VU"
+	bucketReadinessTimeout  = "XK6_COUCHBASE_BUCKET_READINESS_TIMEOUT"
+)
 
 var (
 	singletonClient *Client
@@ -89,8 +93,10 @@ func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 			return bucket.(*gocb.Bucket), nil
 		}
 
+		// TODO: Add retries.
 		newBucket := c.cluster.Bucket(bucketName)
-		err := newBucket.WaitUntilReady(5*time.Second, nil)
+		readinessTimeout := getenvDurationValue(bucketReadinessTimeout, 5*time.Second)
+		err := newBucket.WaitUntilReady(readinessTimeout, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to wait for bucket %s. Err: %w", bucketName, err)
 		}
@@ -236,13 +242,25 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	return result, nil
 }
 
-// TODO: Use gotdotenv or viper pkgs. Done to keep the backward compatibility.
+// TODO: Use gotdotenv or viper pkgs.
 func getenvStringValue(key string) (string, error) {
 	value := os.Getenv(key)
 	if value == "" {
 		return value, errors.New("failed to getenv string value")
 	}
 	return value, nil
+}
+
+func getenvDurationValue(key string, defaultValue time.Duration) time.Duration {
+	value, err := getenvStringValue(key)
+	if err != nil {
+		return defaultValue
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return defaultValue
+	}
+	return duration
 }
 
 func getenvBoolValue(key string, defaultValue bool) bool {
