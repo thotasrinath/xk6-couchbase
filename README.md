@@ -26,6 +26,11 @@ xk6 build --output xk6-couchbase --with github.com/thotasrinath/xk6-couchbase=.
 xk6 build --with github.com/thotasrinath/xk6-couchbase@latest
 ```
 
+#### Note
+
+By default, a new connection is created per VU.
+To share the connection across multiple queries set the environment variable K6_COUCHBASE_DO_CONN_PER_VU to true
+
 ## Examples
 ### Document Insertion Test
 ```js

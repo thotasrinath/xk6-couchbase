@@ -1,7 +1,10 @@
 package xk6_couchbase
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,6 +15,8 @@ import (
 func init() {
 	k6modules.Register("k6/x/couchbase", new(CouchBase))
 }
+
+const doConnectionPerVUEnvKey = "K6_COUCHBASE_DO_CONN_PER_VU"
 
 var (
 	singletonClient *Client
@@ -30,22 +35,34 @@ type Client struct {
 	mu                 sync.Mutex
 }
 
+func instantiateNewConnection(connectionString string, username string, password string) (*gocb.Cluster, error) {
+	// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
+	return gocb.Connect("couchbase://"+connectionString, gocb.ClusterOptions{
+		Authenticator: gocb.PasswordAuthenticator{
+			Username: username,
+			Password: password,
+		},
+	})
+}
+
 func getCouchbaseInstance(connectionString string, username string, password string) (*Client, error) {
+	doConnPerVu := getenvBoolValue(doConnectionPerVUEnvKey, false)
+	if doConnPerVu {
+		cluster, err := instantiateNewConnection(connectionString, username, password)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new connection for %s. Err: %w", connectionString, err)
+		}
+		client := &Client{cluster: cluster}
+		return client, nil
+	}
+
 	once.Do(
 		func() {
-			// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
-			cluster, err := gocb.Connect("couchbase://"+connectionString, gocb.ClusterOptions{
-				Authenticator: gocb.PasswordAuthenticator{
-					Username: username,
-					Password: password,
-				},
-			})
-
+			cluster, err := instantiateNewConnection(connectionString, username, password)
 			if err != nil {
 				errz = err
 				return
 			}
-
 			singletonClient = &Client{cluster: cluster}
 		},
 	)
@@ -64,8 +81,6 @@ func (*CouchBase) NewClient(connectionString string, username string, password s
 func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 	bucket, found := c.bucketsConnections.Load(bucketName)
 	if !found || bucket == nil {
-		// TODO: Replace printfs with logrus (used in other extensions..)
-		// fmt.Printf("bucket %s not found, client instance: %v\n", bucketName, c)
 		// Create bucket connections
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -75,18 +90,15 @@ func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 		}
 
 		newBucket := c.cluster.Bucket(bucketName)
-		// fmt.Printf("bucket %s connected\n", bucketName)
 		err := newBucket.WaitUntilReady(5*time.Second, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to wait for bucket %s. Err: %w", bucketName, err)
 		}
-		// fmt.Printf("bucket %s ready\n", bucketName)
 		c.bucketsConnections.Store(bucketName, newBucket)
 		bucket, loaded := c.bucketsConnections.Load(bucketName)
 		if !loaded {
 			return nil, fmt.Errorf("failed to load bucket %s", bucketName)
 		}
-		// fmt.Printf("bucket %s loaded %v\n", bucket.(*gocb.Bucket).Name(), loaded)
 		return bucket.(*gocb.Bucket), nil
 	}
 	return bucket.(*gocb.Bucket), nil
@@ -222,4 +234,25 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	}
 
 	return result, nil
+}
+
+// TODO: Use gotdotenv or viper pkgs. Done to keep the backward compatibility.
+func getenvStringValue(key string) (string, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return value, errors.New("failed to getenv string value")
+	}
+	return value, nil
+}
+
+func getenvBoolValue(key string, defaultValue bool) bool {
+	s, err := getenvStringValue(key)
+	if err != nil {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(s)
+	if err != nil {
+		return defaultValue
+	}
+	return value
 }
