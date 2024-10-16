@@ -1,10 +1,7 @@
 package xk6_couchbase
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -18,20 +15,42 @@ func init() {
 
 const (
 	// TODO: Define these as API constructs. Const/env variables to have backward compatibility.
-	doConnectionPerVUEnvKey = "XK6_COUCHBASE_DO_CONN_PER_VU"
-	bucketReadinessTimeout  = "XK6_COUCHBASE_BUCKET_READINESS_TIMEOUT"
+	// doConnectionPerVUEnvKey = "XK6_COUCHBASE_DO_CONN_PER_VU"
+	// bucketReadinessTimeout  = "XK6_COUCHBASE_BUCKET_READINESS_TIMEOUT"
+	defaultBucketReadinessTimeout = 5 * time.Second
+	defaultDoConnectionPerVU      = false
 )
 
 var (
 	singletonClient *Client
-	errz            error
 	once            sync.Once
 )
 
 type CouchBase struct{}
 
+type Options struct {
+	doConnectionPerVU      bool
+	bucketReadinessTimeout time.Duration
+	bucketsToWarm          []string
+}
+
+func newDefaultOptions() Options {
+	return Options{
+		doConnectionPerVU:      defaultDoConnectionPerVU,
+		bucketReadinessTimeout: defaultBucketReadinessTimeout,
+	}
+}
+
+type DBConfig struct {
+	Hostname string `json:"connection_string,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
 type Client struct {
 	cluster *gocb.Cluster
+	errz    error
+	options Options
 
 	// Key: bucketName (string)
 	// Value: *gocb.Bucket
@@ -39,50 +58,77 @@ type Client struct {
 	mu                 sync.Mutex
 }
 
-func instantiateNewConnection(connectionString string, username string, password string) (*gocb.Cluster, error) {
+func instantiateNewConnection(dbConfig DBConfig, options Options) *Client {
 	// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
-	return gocb.Connect("couchbase://"+connectionString, gocb.ClusterOptions{
+	cluster, err := gocb.Connect("couchbase://"+dbConfig.Hostname, gocb.ClusterOptions{
 		Authenticator: gocb.PasswordAuthenticator{
-			Username: username,
-			Password: password,
+			Username: dbConfig.Username,
+			Password: dbConfig.Password,
+		},
+		TimeoutsConfig: gocb.TimeoutsConfig{
+			ConnectTimeout: 95 * time.Second,
+			QueryTimeout:   95 * time.Second,
+			SearchTimeout:  95 * time.Second,
 		},
 	})
-}
-
-func getCouchbaseInstance(connectionString string, username string, password string) (*Client, error) {
-	doConnPerVu := getenvBoolValue(doConnectionPerVUEnvKey, false)
-	if doConnPerVu {
-		cluster, err := instantiateNewConnection(connectionString, username, password)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create new connection for %s. Err: %w", connectionString, err)
-		}
-		client := &Client{cluster: cluster}
-		return client, nil
+	if err != nil {
+		return &Client{errz: err, options: options}
 	}
 
-	once.Do(
-		func() {
-			cluster, err := instantiateNewConnection(connectionString, username, password)
-			if err != nil {
-				errz = err
-				return
-			}
-			singletonClient = &Client{cluster: cluster}
-		},
-	)
-	return singletonClient, errz
-}
-
-func (*CouchBase) NewClient(connectionString string, username string, password string) interface{} {
-	client, err := getCouchbaseInstance(connectionString, username, password)
-	if err != nil {
-		return fmt.Errorf("failed to connect to couchase cluster %s. Err: %w", connectionString, errz)
+	client := &Client{cluster: cluster, options: options}
+	for _, bucket := range options.bucketsToWarm {
+		err := client.readyBucket(bucket)
+		if err != nil {
+			return &Client{errz: err, options: options}
+		}
 	}
 	return client
 }
 
-// TODO: Create bucket connections on inits and remove mutex.
-func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
+func getCouchbaseInstance(dbConfig DBConfig, options Options) *Client {
+	if options.doConnectionPerVU {
+		return instantiateNewConnection(dbConfig, options)
+	}
+
+	once.Do(
+		func() {
+			singletonClient = instantiateNewConnection(dbConfig, options)
+		},
+	)
+	return singletonClient
+}
+
+func (*CouchBase) NewOptions(doConnectionPerVU bool, bucketReadinessTimeout string, bucketsToWarm []string) interface{} {
+
+	readinessDuration, err := time.ParseDuration(bucketReadinessTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to parse readiness timeout %v. Err: %w", bucketReadinessTimeout, err)
+	}
+	return Options{
+		doConnectionPerVU:      doConnectionPerVU,
+		bucketReadinessTimeout: readinessDuration,
+		bucketsToWarm:          bucketsToWarm,
+	}
+}
+
+func (*CouchBase) NewWithOptions(dbConfig DBConfig, options Options) *Client {
+	return getCouchbaseInstance(dbConfig, options)
+}
+
+func (*CouchBase) NewClient(connectionString string, username string, password string) interface{} {
+	dbConfig := DBConfig{
+		Hostname: connectionString,
+		Username: username,
+		Password: password,
+	}
+	client := getCouchbaseInstance(dbConfig, newDefaultOptions())
+	if client.errz != nil {
+		return fmt.Errorf("failed to connect to couchase cluster %s. Err: %w", connectionString, client.errz)
+	}
+	return client
+}
+
+func (c *Client) readyBucket(bucketName string) error {
 	bucket, found := c.bucketsConnections.Load(bucketName)
 	if !found || bucket == nil {
 		// Create bucket connections
@@ -90,24 +136,64 @@ func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
 		defer c.mu.Unlock()
 		bucket, found := c.bucketsConnections.Load(bucketName)
 		if found && bucket != nil {
-			return bucket.(*gocb.Bucket), nil
+			return nil
 		}
 
 		// TODO: Add retries.
 		newBucket := c.cluster.Bucket(bucketName)
-		readinessTimeout := getenvDurationValue(bucketReadinessTimeout, 5*time.Second)
-		err := newBucket.WaitUntilReady(readinessTimeout, nil)
+		err := newBucket.WaitUntilReady(c.options.bucketReadinessTimeout, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to wait for bucket %s. Err: %w", bucketName, err)
+			return fmt.Errorf("failed to wait for bucket %s, timeout: %v. Err: %w", bucketName, c.options.bucketReadinessTimeout, err)
 		}
 		c.bucketsConnections.Store(bucketName, newBucket)
-		bucket, loaded := c.bucketsConnections.Load(bucketName)
-		if !loaded {
-			return nil, fmt.Errorf("failed to load bucket %s", bucketName)
-		}
-		return bucket.(*gocb.Bucket), nil
+	}
+	return nil
+}
+
+// TODO: Create bucket connections on inits and remove mutex.
+func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
+	err := c.readyBucket(bucketName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ready bucket %s, Err: %w", bucketName, err)
+	}
+	bucket, loaded := c.bucketsConnections.Load(bucketName)
+	if !loaded {
+		return nil, fmt.Errorf("failed to load bucket %s", bucketName)
 	}
 	return bucket.(*gocb.Bucket), nil
+
+	// bucket, found := c.bucketsConnections.Load(bucketName)
+	// if !found || bucket == nil {
+	// 	// Create bucket connections
+	// 	c.mu.Lock()
+	// 	defer c.mu.Unlock()
+	// 	bucket, found := c.bucketsConnections.Load(bucketName)
+	// 	if found && bucket != nil {
+	// 		return bucket.(*gocb.Bucket), nil
+	// 	}
+
+	// 	// TODO: Add retries.
+	// 	newBucket := c.cluster.Bucket(bucketName)
+	// 	err := newBucket.WaitUntilReady(c.options.bucketReadinessTimeout, nil)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to wait for bucket %s, timeout: %v. Err: %w", bucketName, c.options.bucketReadinessTimeout, err)
+	// 	}
+	// 	c.bucketsConnections.Store(bucketName, newBucket)
+	// 	bucket, loaded := c.bucketsConnections.Load(bucketName)
+	// 	if !loaded {
+	// 		return nil, fmt.Errorf("failed to load bucket %s", bucketName)
+	// 	}
+	// 	return bucket.(*gocb.Bucket), nil
+	// }
+	// return bucket.(*gocb.Bucket), nil
+}
+
+func (c *Client) HasError() bool {
+	return c.errz != nil
+}
+
+func (c *Client) GetError() string {
+	return c.errz.Error()
 }
 
 func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) error {
@@ -242,35 +328,35 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	return result, nil
 }
 
-// TODO: Use gotdotenv or viper pkgs.
-func getenvStringValue(key string) (string, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return value, errors.New("failed to getenv string value")
-	}
-	return value, nil
-}
+// // TODO: Use gotdotenv or viper pkgs.
+// func getenvStringValue(key string) (string, error) {
+// 	value := os.Getenv(key)
+// 	if value == "" {
+// 		return value, errors.New("failed to getenv string value")
+// 	}
+// 	return value, nil
+// }
 
-func getenvDurationValue(key string, defaultValue time.Duration) time.Duration {
-	value, err := getenvStringValue(key)
-	if err != nil {
-		return defaultValue
-	}
-	duration, err := time.ParseDuration(value)
-	if err != nil {
-		return defaultValue
-	}
-	return duration
-}
+// func getenvDurationValue(key string, defaultValue time.Duration) time.Duration {
+// 	value, err := getenvStringValue(key)
+// 	if err != nil {
+// 		return defaultValue
+// 	}
+// 	duration, err := time.ParseDuration(value)
+// 	if err != nil {
+// 		return defaultValue
+// 	}
+// 	return duration
+// }
 
-func getenvBoolValue(key string, defaultValue bool) bool {
-	s, err := getenvStringValue(key)
-	if err != nil {
-		return defaultValue
-	}
-	value, err := strconv.ParseBool(s)
-	if err != nil {
-		return defaultValue
-	}
-	return value
-}
+// func getenvBoolValue(key string, defaultValue bool) bool {
+// 	s, err := getenvStringValue(key)
+// 	if err != nil {
+// 		return defaultValue
+// 	}
+// 	value, err := strconv.ParseBool(s)
+// 	if err != nil {
+// 		return defaultValue
+// 	}
+// 	return value
+// }
