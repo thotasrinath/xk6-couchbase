@@ -54,7 +54,7 @@ func (c *CouchBase) NewClientPerVU(dbConfig DBConfig, bucketsToWarm []string, bu
 		BucketReadinessTimeout: parseStringToDuration(bucketReadinessDuration),
 		BucketsToWarm:          bucketsToWarm,
 	}
-	return c.NewWithOptions(dbConfig, opts)
+	return c.NewClientWithOptions(dbConfig, opts)
 }
 
 func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string) (*Client, error) {
@@ -64,10 +64,10 @@ func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWa
 		BucketsToWarm:          bucketsToWarm,
 	}
 
-	return c.NewWithOptions(dbConfig, opts)
+	return c.NewClientWithOptions(dbConfig, opts)
 }
 
-func (c *CouchBase) NewWithOptions(dbConfig DBConfig, opts options) (*Client, error) {
+func (c *CouchBase) NewClientWithOptions(dbConfig DBConfig, opts options) (*Client, error) {
 	client, err := getCouchbaseInstance(dbConfig, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new couchbase connection with options for cluster %s. Err: %w", dbConfig.Hostname, err)
@@ -100,7 +100,7 @@ func (*CouchBase) NewClient(connectionString string, username string, password s
 	return client
 }
 
-func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) error {
+func (c *Client) Insert(bucketName string, scope string, collection string, docId string, doc any) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for insert. Err: %w", err)
@@ -113,7 +113,7 @@ func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) er
 	return nil
 }
 
-func (c *Client) Upsert(bucketName, scope, collection, docId string, doc any) error {
+func (c *Client) Upsert(bucketName string, scope string, collection string, docId string, doc any) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for upsert. Err: %w", err)
@@ -126,7 +126,7 @@ func (c *Client) Upsert(bucketName, scope, collection, docId string, doc any) er
 	return nil
 }
 
-func (c *Client) Remove(bucketName, scope, collection, docId string) error {
+func (c *Client) Remove(bucketName string, scope string, collection string, docId string) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for remove. Err: %w", err)
@@ -144,7 +144,7 @@ func (c *Client) Remove(bucketName, scope, collection, docId string) error {
 	return nil
 }
 
-func (c *Client) InsertBatch(bucketName, scope, collection string, docs map[string]any) error {
+func (c *Client) InsertBatch(bucketName string, scope string, collection string, docs map[string]any) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for insertBatch. Err: %w", err)
@@ -187,14 +187,13 @@ func (c *Client) Find(query string) (any, error) {
 	return result, nil
 }
 
-func (c *Client) FindOne(bucketName, scope, collection, docId string) (any, error) {
+func (c *Client) FindOne(bucketName string, scope string, collection string, docId string) (any, error) {
 	var result interface{}
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return result, fmt.Errorf("failed to get bucket connection for findOne. Err: %w", err)
 	}
 	bucketScope := bucket.Scope(scope)
-
 	getResult, err := bucketScope.Collection(collection).Get(docId, nil)
 	if err != nil {
 		return result, err
