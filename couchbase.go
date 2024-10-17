@@ -14,43 +14,33 @@ func init() {
 }
 
 const (
-	// TODO: Define these as API constructs. Const/env variables to have backward compatibility.
-	// doConnectionPerVUEnvKey = "XK6_COUCHBASE_DO_CONN_PER_VU"
-	// bucketReadinessTimeout  = "XK6_COUCHBASE_BUCKET_READINESS_TIMEOUT"
 	defaultBucketReadinessTimeout = 5 * time.Second
-	defaultDoConnectionPerVU      = false
+	defaultDoConnectionPerVU      = true
 )
 
 var (
 	singletonClient *Client
+	errz            error
 	once            sync.Once
 )
 
 type CouchBase struct{}
 
-type Options struct {
-	doConnectionPerVU      bool
-	bucketReadinessTimeout time.Duration
-	bucketsToWarm          []string
-}
-
-func newDefaultOptions() Options {
-	return Options{
-		doConnectionPerVU:      defaultDoConnectionPerVU,
-		bucketReadinessTimeout: defaultBucketReadinessTimeout,
-	}
+type options struct {
+	DoConnectionPerVU      bool          `json:"do_connection_per_vu,omitempty"`
+	BucketReadinessTimeout time.Duration `json:"bucket_readiness_timeout,omitempty"`
+	BucketsToWarm          []string      `json:"buckets_to_warm,omitempty"`
 }
 
 type DBConfig struct {
 	Hostname string `json:"connection_string,omitempty"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
+	Username string `json:"-"`
+	Password string `json:"-"`
 }
 
 type Client struct {
 	cluster *gocb.Cluster
-	errz    error
-	options Options
+	options options
 
 	// Key: bucketName (string)
 	// Value: *gocb.Bucket
@@ -58,61 +48,39 @@ type Client struct {
 	mu                 sync.Mutex
 }
 
-func instantiateNewConnection(dbConfig DBConfig, options Options) *Client {
-	// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
-	cluster, err := gocb.Connect("couchbase://"+dbConfig.Hostname, gocb.ClusterOptions{
-		Authenticator: gocb.PasswordAuthenticator{
-			Username: dbConfig.Username,
-			Password: dbConfig.Password,
-		},
-		TimeoutsConfig: gocb.TimeoutsConfig{
-			ConnectTimeout: 95 * time.Second,
-			QueryTimeout:   95 * time.Second,
-			SearchTimeout:  95 * time.Second,
-		},
-	})
-	if err != nil {
-		return &Client{errz: err, options: options}
+func (c *CouchBase) NewClientPerVU(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string) (*Client, error) {
+	opts := options{
+		DoConnectionPerVU:      true,
+		BucketReadinessTimeout: parseStringToDuration(bucketReadinessDuration),
+		BucketsToWarm:          bucketsToWarm,
+	}
+	return c.NewWithOptions(dbConfig, opts)
+}
+
+func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string) (*Client, error) {
+	opts := options{
+		DoConnectionPerVU:      false,
+		BucketReadinessTimeout: parseStringToDuration(bucketReadinessDuration),
+		BucketsToWarm:          bucketsToWarm,
 	}
 
-	client := &Client{cluster: cluster, options: options}
-	for _, bucket := range options.bucketsToWarm {
-		err := client.readyBucket(bucket)
+	return c.NewWithOptions(dbConfig, opts)
+}
+
+func (c *CouchBase) NewWithOptions(dbConfig DBConfig, opts options) (*Client, error) {
+	client, err := getCouchbaseInstance(dbConfig, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new couchbase connection with options for cluster %s. Err: %w", dbConfig.Hostname, err)
+	}
+
+	// Optionally warm the bucket on client's request
+	for _, bucket := range opts.BucketsToWarm {
+		_, err := client.connectBucketOrLoad(bucket)
 		if err != nil {
-			return &Client{errz: err, options: options}
+			return nil, fmt.Errorf("failed to connect to bucket :%s, Err: %w", bucket, err)
 		}
 	}
-	return client
-}
-
-func getCouchbaseInstance(dbConfig DBConfig, options Options) *Client {
-	if options.doConnectionPerVU {
-		return instantiateNewConnection(dbConfig, options)
-	}
-
-	once.Do(
-		func() {
-			singletonClient = instantiateNewConnection(dbConfig, options)
-		},
-	)
-	return singletonClient
-}
-
-func (*CouchBase) NewOptions(doConnectionPerVU bool, bucketReadinessTimeout string, bucketsToWarm []string) interface{} {
-
-	readinessDuration, err := time.ParseDuration(bucketReadinessTimeout)
-	if err != nil {
-		return fmt.Errorf("failed to parse readiness timeout %v. Err: %w", bucketReadinessTimeout, err)
-	}
-	return Options{
-		doConnectionPerVU:      doConnectionPerVU,
-		bucketReadinessTimeout: readinessDuration,
-		bucketsToWarm:          bucketsToWarm,
-	}
-}
-
-func (*CouchBase) NewWithOptions(dbConfig DBConfig, options Options) *Client {
-	return getCouchbaseInstance(dbConfig, options)
+	return client, nil
 }
 
 func (*CouchBase) NewClient(connectionString string, username string, password string) interface{} {
@@ -121,79 +89,15 @@ func (*CouchBase) NewClient(connectionString string, username string, password s
 		Username: username,
 		Password: password,
 	}
-	client := getCouchbaseInstance(dbConfig, newDefaultOptions())
-	if client.errz != nil {
-		return fmt.Errorf("failed to connect to couchase cluster %s. Err: %w", connectionString, client.errz)
+	opts := options{
+		DoConnectionPerVU:      defaultDoConnectionPerVU,
+		BucketReadinessTimeout: defaultBucketReadinessTimeout,
+	}
+	client, err := getCouchbaseInstance(dbConfig, opts)
+	if err != nil {
+		return fmt.Errorf("failed to connect to couchase cluster %s. Err: %w", connectionString, err)
 	}
 	return client
-}
-
-func (c *Client) readyBucket(bucketName string) error {
-	bucket, found := c.bucketsConnections.Load(bucketName)
-	if !found || bucket == nil {
-		// Create bucket connections
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		bucket, found := c.bucketsConnections.Load(bucketName)
-		if found && bucket != nil {
-			return nil
-		}
-
-		// TODO: Add retries.
-		newBucket := c.cluster.Bucket(bucketName)
-		err := newBucket.WaitUntilReady(c.options.bucketReadinessTimeout, nil)
-		if err != nil {
-			return fmt.Errorf("failed to wait for bucket %s, timeout: %v. Err: %w", bucketName, c.options.bucketReadinessTimeout, err)
-		}
-		c.bucketsConnections.Store(bucketName, newBucket)
-	}
-	return nil
-}
-
-// TODO: Create bucket connections on inits and remove mutex.
-func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
-	err := c.readyBucket(bucketName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to ready bucket %s, Err: %w", bucketName, err)
-	}
-	bucket, loaded := c.bucketsConnections.Load(bucketName)
-	if !loaded {
-		return nil, fmt.Errorf("failed to load bucket %s", bucketName)
-	}
-	return bucket.(*gocb.Bucket), nil
-
-	// bucket, found := c.bucketsConnections.Load(bucketName)
-	// if !found || bucket == nil {
-	// 	// Create bucket connections
-	// 	c.mu.Lock()
-	// 	defer c.mu.Unlock()
-	// 	bucket, found := c.bucketsConnections.Load(bucketName)
-	// 	if found && bucket != nil {
-	// 		return bucket.(*gocb.Bucket), nil
-	// 	}
-
-	// 	// TODO: Add retries.
-	// 	newBucket := c.cluster.Bucket(bucketName)
-	// 	err := newBucket.WaitUntilReady(c.options.bucketReadinessTimeout, nil)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to wait for bucket %s, timeout: %v. Err: %w", bucketName, c.options.bucketReadinessTimeout, err)
-	// 	}
-	// 	c.bucketsConnections.Store(bucketName, newBucket)
-	// 	bucket, loaded := c.bucketsConnections.Load(bucketName)
-	// 	if !loaded {
-	// 		return nil, fmt.Errorf("failed to load bucket %s", bucketName)
-	// 	}
-	// 	return bucket.(*gocb.Bucket), nil
-	// }
-	// return bucket.(*gocb.Bucket), nil
-}
-
-func (c *Client) HasError() bool {
-	return c.errz != nil
-}
-
-func (c *Client) GetError() string {
-	return c.errz.Error()
 }
 
 func (c *Client) Insert(bucketName, scope, collection, docId string, doc any) error {
@@ -287,7 +191,7 @@ func (c *Client) FindOne(bucketName, scope, collection, docId string) (any, erro
 	var result interface{}
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
-		return result, fmt.Errorf("failed to create bucket connection for findOne. Err: %w", err)
+		return result, fmt.Errorf("failed to get bucket connection for findOne. Err: %w", err)
 	}
 	bucketScope := bucket.Scope(scope)
 
@@ -326,4 +230,81 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	}
 
 	return result, nil
+}
+
+func (c *Client) Close() error {
+	opts := gocb.ClusterCloseOptions{}
+	return c.cluster.Close(&opts)
+}
+
+// TODO: Create bucket connections on inits and remove mutex.
+func (c *Client) getBucket(bucketName string) (*gocb.Bucket, error) {
+	return c.connectBucketOrLoad(bucketName)
+}
+
+func (c *Client) connectBucketOrLoad(bucketName string) (*gocb.Bucket, error) {
+	bucket, found := c.bucketsConnections.Load(bucketName)
+	if !found || bucket == nil {
+		// Create bucket connections
+		// Mutex Lock to ensure that the bucket is instantiated only once in shared cluster connection mode.
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		bucket, found := c.bucketsConnections.Load(bucketName)
+		if found && bucket != nil {
+			return bucket.(*gocb.Bucket), nil
+		}
+
+		newBucket := c.cluster.Bucket(bucketName)
+		err := newBucket.WaitUntilReady(c.options.BucketReadinessTimeout, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to wait for bucket %s, timeout: %v. Err: %w", bucketName, c.options.BucketReadinessTimeout, err)
+		}
+		c.bucketsConnections.Store(bucketName, newBucket)
+		return newBucket, nil
+
+	}
+	return bucket.(*gocb.Bucket), nil
+}
+
+func getCouchbaseInstance(dbConfig DBConfig, opts options) (*Client, error) {
+	if opts.DoConnectionPerVU {
+		return instantiateNewConnection(dbConfig, opts)
+	}
+
+	once.Do(
+		func() {
+			client, err := instantiateNewConnection(dbConfig, opts)
+			if err != nil {
+				errz = err
+				return
+			}
+			singletonClient = client
+		},
+	)
+	return singletonClient, errz
+}
+
+func instantiateNewConnection(dbConfig DBConfig, options options) (*Client, error) {
+	// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
+	cluster, err := gocb.Connect("couchbase://"+dbConfig.Hostname, gocb.ClusterOptions{
+		Authenticator: gocb.PasswordAuthenticator{
+			Username: dbConfig.Username,
+			Password: dbConfig.Password,
+		},
+		// TODO: Set timeoutConfig
+	})
+	if err != nil {
+		return nil, fmt.Errorf("faile to instantiate new connection to couchbase cluster %s. Err: %w", dbConfig.Hostname, err)
+	}
+
+	return &Client{cluster: cluster, options: options}, nil
+}
+
+func parseStringToDuration(bucketReadinessDuration string) time.Duration {
+	readinessDuration, err := time.ParseDuration(bucketReadinessDuration)
+	if err != nil {
+		readinessDuration = defaultBucketReadinessTimeout
+	}
+
+	return readinessDuration
 }
