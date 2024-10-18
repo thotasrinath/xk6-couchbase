@@ -187,6 +187,19 @@ func (c *Client) Find(query string) (any, error) {
 	return result, nil
 }
 
+func (c *Client) Exists(bucketName string, scope string, collection string, docId string) error {
+	bucket, err := c.getBucket(bucketName)
+	if err != nil {
+		return fmt.Errorf("failed to get bucket connection for findOne. Err: %w", err)
+	}
+	bucketScope := bucket.Scope(scope)
+	_, err = bucketScope.Collection(collection).Exists(docId, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *Client) FindOne(bucketName string, scope string, collection string, docId string) (any, error) {
 	var result interface{}
 	bucket, err := c.getBucket(bucketName)
