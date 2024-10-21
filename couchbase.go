@@ -14,8 +14,9 @@ func init() {
 }
 
 const (
-	defaultBucketReadinessTimeout = 5 * time.Second
-	defaultDoConnectionPerVU      = true
+	defaultBucketReadinessTimeout    = 5 * time.Second
+	defaultDoConnectionPerVU         = true
+	defaultConnectionBufferSizeBytes = 2048
 )
 
 var (
@@ -27,9 +28,10 @@ var (
 type CouchBase struct{}
 
 type options struct {
-	DoConnectionPerVU      bool          `json:"do_connection_per_vu,omitempty"`
-	BucketReadinessTimeout time.Duration `json:"bucket_readiness_timeout,omitempty"`
-	BucketsToWarm          []string      `json:"buckets_to_warm,omitempty"`
+	DoConnectionPerVU         bool          `json:"do_connection_per_vu,omitempty"`
+	BucketReadinessTimeout    time.Duration `json:"bucket_readiness_timeout,omitempty"`
+	BucketsToWarm             []string      `json:"buckets_to_warm,omitempty"`
+	ConnectionBufferSizeBytes int           `json:"connection_buffer_size_bytes,omitempty"`
 }
 
 type DBConfig struct {
@@ -48,26 +50,31 @@ type Client struct {
 	mu                 sync.Mutex
 }
 
-func (c *CouchBase) NewClientPerVU(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string) (*Client, error) {
+func (c *CouchBase) NewClientPerVU(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string, connectionBufferSizeBytes int) (*Client, error) {
 	opts := options{
-		DoConnectionPerVU:      true,
-		BucketReadinessTimeout: parseStringToDuration(bucketReadinessDuration),
-		BucketsToWarm:          bucketsToWarm,
+		DoConnectionPerVU:         true,
+		BucketReadinessTimeout:    parseStringToDuration(bucketReadinessDuration),
+		BucketsToWarm:             bucketsToWarm,
+		ConnectionBufferSizeBytes: connectionBufferSizeBytes,
 	}
 	return c.NewClientWithOptions(dbConfig, opts)
 }
 
-func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string) (*Client, error) {
+func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string, connectionBufferSizeBytes int) (*Client, error) {
 	opts := options{
-		DoConnectionPerVU:      false,
-		BucketReadinessTimeout: parseStringToDuration(bucketReadinessDuration),
-		BucketsToWarm:          bucketsToWarm,
+		DoConnectionPerVU:         false,
+		BucketReadinessTimeout:    parseStringToDuration(bucketReadinessDuration),
+		BucketsToWarm:             bucketsToWarm,
+		ConnectionBufferSizeBytes: connectionBufferSizeBytes,
 	}
 
 	return c.NewClientWithOptions(dbConfig, opts)
 }
 
 func (c *CouchBase) NewClientWithOptions(dbConfig DBConfig, opts options) (*Client, error) {
+	if opts.ConnectionBufferSizeBytes < 1 {
+		opts.ConnectionBufferSizeBytes = defaultConnectionBufferSizeBytes
+	}
 	client, err := getCouchbaseInstance(dbConfig, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new couchbase connection with options for cluster %s. Err: %w", dbConfig.Hostname, err)
@@ -298,7 +305,9 @@ func getCouchbaseInstance(dbConfig DBConfig, opts options) (*Client, error) {
 
 func instantiateNewConnection(dbConfig DBConfig, options options) (*Client, error) {
 	// For a secure cluster connection, use `couchbases://<your-cluster-ip>` instead.
-	cluster, err := gocb.Connect("couchbase://"+dbConfig.Hostname, gocb.ClusterOptions{
+	connStr := fmt.Sprintf("couchbase://%s?kv_buffer_size=2048", dbConfig.Hostname)
+	// connStr := "couchbase://"+dbConfig.Hostname
+	cluster, err := gocb.Connect(connStr, gocb.ClusterOptions{
 		Authenticator: gocb.PasswordAuthenticator{
 			Username: dbConfig.Username,
 			Password: dbConfig.Password,
