@@ -1,7 +1,7 @@
 import xk6_couchbase from 'k6/x/couchbase';
 import {randomIntBetween} from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
 
-const client = xk6_couchbase.newClient('localhost', '<username>', '<password>');
+const client = xk6_couchbase.newClient(__ENV.CB_HOST || 'localhost', __ENV.CB_USER || '<username>', __ENV.CB_PASS || '<password>');
 export default () => {
 
     let doc = {

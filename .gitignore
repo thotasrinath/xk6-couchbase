@@ -1,1 +1,11 @@
+# Built k6 binaries (output of `make build` / `xk6 build`)
 xk6-cb
+xk6-couchbase
+k6
+
+# Test & coverage artifacts
+coverage.out
+*.out
+
+# Editor / OS
+.DS_Store

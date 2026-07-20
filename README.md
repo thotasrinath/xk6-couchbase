@@ -15,21 +15,48 @@ K6 extension to perform tests on couchbase.
 
 ## Build Instructions
 
-- Install xk6 using (go install go.k6.io/xk6/cmd/xk6@latest)
-
 ### For Development
 
 ```shell
 git clone git@github.com:thotasrinath/xk6-couchbase.git
 cd xk6-couchbase
-xk6 build --output xk6-couchbase --with github.com/thotasrinath/xk6-couchbase=.
+make build
 ```
+
+This produces a `./xk6-couchbase` binary from the local source. No global `xk6`
+is required — the Makefile invokes it via `go run`. See the
+[Development](#development) section for the full set of `make` targets (tests,
+lint, example validation).
 
 ### For Use
 
+Install xk6, then build a k6 binary with the published extension:
+
 ```shell
+go install go.k6.io/xk6/cmd/xk6@latest
 xk6 build --with github.com/thotasrinath/xk6-couchbase@latest
 ```
+
+## Development
+
+A `Makefile` wraps the common tasks (run `make` with no target to list them):
+
+```shell
+make build      # build a k6 binary with this extension from local source
+make test       # run unit tests
+make check      # gofmt + go vet + test (pre-commit gate)
+make lint       # golangci-lint (see https://golangci-lint.run to install)
+make validate   # build + ensure local Couchbase + run every example end-to-end
+```
+
+Unit tests cover the module lifecycle, the shared-connection singleton, and the
+per-VU connection behavior. They use k6's `modulestest` runtime and do not
+require a live Couchbase cluster (`gocb.Connect` is lazy), so `make test` runs
+anywhere.
+
+`make validate` runs the example scripts against a local Couchbase (starting a
+Docker container if one isn't already reachable). See
+[examples/README.md](examples/README.md) for details.
 
 ## Examples
 

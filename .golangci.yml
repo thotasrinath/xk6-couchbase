@@ -1,0 +1,20 @@
+# golangci-lint configuration for xk6-couchbase (golangci-lint v2 schema).
+# Run with: make lint   (or: golangci-lint run)
+version: "2"
+
+linters:
+  enable:
+    # errcheck, govet, ineffassign, staticcheck (incl. gosimple/stylecheck) and
+    # unused are on by default in v2; these add to that set.
+    - misspell      # common misspellings
+    - revive        # golint successor
+  exclusions:
+    rules:
+      # Test files may ignore Close()/cleanup errors for brevity.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt         # formatting (a formatter, not a linter, in v2)

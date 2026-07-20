@@ -1,3 +1,5 @@
+// Package xk6_couchbase implements a k6 extension (k6/x/couchbase) for running
+// load tests against Couchbase clusters.
 package xk6_couchbase
 
 import (
@@ -6,11 +8,11 @@ import (
 	"time"
 
 	"github.com/couchbase/gocb/v2"
-	k6modules "go.k6.io/k6/js/modules"
+	k6modules "go.k6.io/k6/v2/js/modules"
 )
 
 func init() {
-	k6modules.Register("k6/x/couchbase", new(CouchBase))
+	k6modules.Register("k6/x/couchbase", New())
 }
 
 const (
@@ -19,13 +21,48 @@ const (
 	defaultConnectionBufferSizeBytes = 2048
 )
 
-var (
+// RootModule is created once per k6 run. It holds state that is shared across
+// all VUs, namely the lazily-initialized singleton client used in shared
+// connection mode.
+type RootModule struct {
+	once            sync.Once
 	singletonClient *Client
 	errz            error
-	once            sync.Once
+}
+
+// ModuleInstance is created once per VU by k6. Each instance points back to the
+// single RootModule so VUs can share the singleton connection when requested.
+type ModuleInstance struct {
+	vu   k6modules.VU
+	root *RootModule
+}
+
+// Ensure the module satisfies the k6 module interfaces.
+var (
+	_ k6modules.Module   = &RootModule{}
+	_ k6modules.Instance = &ModuleInstance{}
 )
 
-type CouchBase struct{}
+// New builds the root module. It is registered once in init.
+func New() *RootModule {
+	return &RootModule{}
+}
+
+// NewModuleInstance is called by k6 for every VU, handing it the shared root.
+func (r *RootModule) NewModuleInstance(vu k6modules.VU) k6modules.Instance {
+	return &ModuleInstance{vu: vu, root: r}
+}
+
+// Exports exposes the CouchBase API object to the JS runtime as the default
+// export, preserving the `import xk6_couchbase from 'k6/x/couchbase'` usage.
+func (mi *ModuleInstance) Exports() k6modules.Exports {
+	return k6modules.Exports{Default: &CouchBase{root: mi.root}}
+}
+
+// CouchBase is the JS-facing API object. Shared state lives on root.
+type CouchBase struct {
+	root *RootModule
+}
 
 type options struct {
 	DoConnectionPerVU         bool          `json:"do_connection_per_vu,omitempty"`
@@ -34,12 +71,15 @@ type options struct {
 	ConnectionBufferSizeBytes int           `json:"connection_buffer_size_bytes,omitempty"`
 }
 
+// DBConfig holds the connection details for a Couchbase cluster.
 type DBConfig struct {
 	Hostname string `json:"connection_string,omitempty"`
 	Username string `json:"-"`
 	Password string `json:"-"`
 }
 
+// Client is a connected Couchbase client exposed to JS test scripts. It is
+// returned by the NewClient* constructors and caches per-bucket connections.
 type Client struct {
 	cluster *gocb.Cluster
 	options options
@@ -50,6 +90,9 @@ type Client struct {
 	mu                 sync.Mutex
 }
 
+// NewClientPerVU returns a client that opens a dedicated cluster connection for
+// each VU. Useful for exercising the maximum number of connections a cluster
+// can handle.
 func (c *CouchBase) NewClientPerVU(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string, connectionBufferSizeBytes int) (*Client, error) {
 	opts := options{
 		DoConnectionPerVU:         true,
@@ -60,6 +103,9 @@ func (c *CouchBase) NewClientPerVU(dbConfig DBConfig, bucketsToWarm []string, bu
 	return c.NewClientWithOptions(dbConfig, opts)
 }
 
+// NewClientWithSharedConnection returns a client backed by a single cluster
+// connection shared across all VUs, maximizing QPS without exhausting client
+// resources.
 func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWarm []string, bucketReadinessDuration string, connectionBufferSizeBytes int) (*Client, error) {
 	opts := options{
 		DoConnectionPerVU:         false,
@@ -71,11 +117,13 @@ func (c *CouchBase) NewClientWithSharedConnection(dbConfig DBConfig, bucketsToWa
 	return c.NewClientWithOptions(dbConfig, opts)
 }
 
+// NewClientWithOptions returns a client configured with the given options,
+// optionally pre-warming the requested buckets.
 func (c *CouchBase) NewClientWithOptions(dbConfig DBConfig, opts options) (*Client, error) {
 	if opts.ConnectionBufferSizeBytes < 1 {
 		opts.ConnectionBufferSizeBytes = defaultConnectionBufferSizeBytes
 	}
-	client, err := getCouchbaseInstance(dbConfig, opts)
+	client, err := c.getCouchbaseInstance(dbConfig, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new couchbase connection with options for cluster %s. Err: %w", dbConfig.Hostname, err)
 	}
@@ -90,7 +138,10 @@ func (c *CouchBase) NewClientWithOptions(dbConfig DBConfig, opts options) (*Clie
 	return client, nil
 }
 
-func (*CouchBase) NewClient(connectionString string, username string, password string) interface{} {
+// NewClient returns a client using the default options (shared connection). On
+// success it returns the *Client; on failure it returns an error value to the
+// JS runtime.
+func (c *CouchBase) NewClient(connectionString string, username string, password string) interface{} {
 	dbConfig := DBConfig{
 		Hostname: connectionString,
 		Username: username,
@@ -100,40 +151,43 @@ func (*CouchBase) NewClient(connectionString string, username string, password s
 		DoConnectionPerVU:      defaultDoConnectionPerVU,
 		BucketReadinessTimeout: defaultBucketReadinessTimeout,
 	}
-	client, err := getCouchbaseInstance(dbConfig, opts)
+	client, err := c.getCouchbaseInstance(dbConfig, opts)
 	if err != nil {
 		return fmt.Errorf("failed to connect to couchase cluster %s. Err: %w", connectionString, err)
 	}
 	return client
 }
 
-func (c *Client) Insert(bucketName string, scope string, collection string, docId string, doc any) error {
+// Insert adds a new document, failing if the document ID already exists.
+func (c *Client) Insert(bucketName string, scope string, collection string, docID string, doc any) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for insert. Err: %w", err)
 	}
 	col := bucket.Scope(scope).Collection(collection)
-	_, err = col.Insert(docId, doc, nil)
+	_, err = col.Insert(docID, doc, nil)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Client) Upsert(bucketName string, scope string, collection string, docId string, doc any) error {
+// Upsert inserts a document, replacing it if the document ID already exists.
+func (c *Client) Upsert(bucketName string, scope string, collection string, docID string, doc any) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for upsert. Err: %w", err)
 	}
 	col := bucket.Scope(scope).Collection(collection)
-	_, err = col.Upsert(docId, doc, nil)
+	_, err = col.Upsert(docID, doc, nil)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Client) Remove(bucketName string, scope string, collection string, docId string) error {
+// Remove deletes a document by ID using majority durability.
+func (c *Client) Remove(bucketName string, scope string, collection string, docID string) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket connection for remove. Err: %w", err)
@@ -141,7 +195,7 @@ func (c *Client) Remove(bucketName string, scope string, collection string, docI
 	col := bucket.Scope(scope).Collection(collection)
 
 	// Remove with Durability
-	_, err = col.Remove(docId, &gocb.RemoveOptions{
+	_, err = col.Remove(docID, &gocb.RemoveOptions{
 		Timeout:         100 * time.Millisecond,
 		DurabilityLevel: gocb.DurabilityLevelMajority,
 	})
@@ -151,6 +205,8 @@ func (c *Client) Remove(bucketName string, scope string, collection string, docI
 	return nil
 }
 
+// InsertBatch inserts multiple documents (keyed by document ID) in a single
+// bulk operation.
 func (c *Client) InsertBatch(bucketName string, scope string, collection string, docs map[string]any) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
@@ -172,6 +228,9 @@ func (c *Client) InsertBatch(bucketName string, scope string, collection string,
 	return nil
 }
 
+// FindMany fetches multiple documents by key in a single bulk operation,
+// returning a map of document ID to document. Keys that do not exist (or fail
+// to decode) are omitted from the result.
 func (c *Client) FindMany(bucketName string, scope string, collection string, keys []string) (map[string]interface{}, error) {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
@@ -192,22 +251,26 @@ func (c *Client) FindMany(bucketName string, scope string, collection string, ke
 	results := make(map[string]interface{}, len(keys))
 	for _, op := range batchItems {
 		getOp := op.(*gocb.GetOp)
-		if getOp.Err == nil {
-			var doc interface{}
-			getOp.Result.Content(&doc)
-			results[getOp.ID] = doc
+		if getOp.Err != nil {
+			continue
 		}
-		// Missing keys silently absent from results map
+		var doc interface{}
+		if err := getOp.Result.Content(&doc); err != nil {
+			// Skip keys whose content fails to decode.
+			continue
+		}
+		results[getOp.ID] = doc
 	}
 
 	return results, nil
 }
 
+// Find executes a N1QL query and returns the last row read.
 func (c *Client) Find(query string) (any, error) {
 	var result interface{}
 
 	queryResult, err := c.cluster.Query(
-		fmt.Sprintf(query),
+		query,
 		&gocb.QueryOptions{},
 	)
 	if err != nil {
@@ -225,27 +288,29 @@ func (c *Client) Find(query string) (any, error) {
 	return result, nil
 }
 
-func (c *Client) Exists(bucketName string, scope string, collection string, docId string) error {
+// Exists reports whether a document with the given ID exists.
+func (c *Client) Exists(bucketName string, scope string, collection string, docID string) error {
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to get bucket connection for findOne. Err: %w", err)
 	}
 	bucketScope := bucket.Scope(scope)
-	_, err = bucketScope.Collection(collection).Exists(docId, nil)
+	_, err = bucketScope.Collection(collection).Exists(docID, nil)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Client) FindOne(bucketName string, scope string, collection string, docId string) (any, error) {
+// FindOne fetches a single document by ID.
+func (c *Client) FindOne(bucketName string, scope string, collection string, docID string) (any, error) {
 	var result interface{}
 	bucket, err := c.getBucket(bucketName)
 	if err != nil {
 		return result, fmt.Errorf("failed to get bucket connection for findOne. Err: %w", err)
 	}
 	bucketScope := bucket.Scope(scope)
-	getResult, err := bucketScope.Collection(collection).Get(docId, nil)
+	getResult, err := bucketScope.Collection(collection).Get(docID, nil)
 	if err != nil {
 		return result, err
 	}
@@ -258,6 +323,8 @@ func (c *Client) FindOne(bucketName string, scope string, collection string, doc
 	return result, nil
 }
 
+// FindByPreparedStmt executes a N1QL query with positional parameters and
+// returns the last row read.
 func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, error) {
 	var result interface{}
 	queryResult, err := c.cluster.Query(
@@ -282,6 +349,7 @@ func (c *Client) FindByPreparedStmt(query string, params ...interface{}) (any, e
 	return result, nil
 }
 
+// Close closes the underlying cluster connection.
 func (c *Client) Close() error {
 	opts := gocb.ClusterCloseOptions{}
 	return c.cluster.Close(&opts)
@@ -316,22 +384,22 @@ func (c *Client) connectBucketOrLoad(bucketName string) (*gocb.Bucket, error) {
 	return bucket.(*gocb.Bucket), nil
 }
 
-func getCouchbaseInstance(dbConfig DBConfig, opts options) (*Client, error) {
+func (c *CouchBase) getCouchbaseInstance(dbConfig DBConfig, opts options) (*Client, error) {
 	if opts.DoConnectionPerVU {
 		return instantiateNewConnection(dbConfig, opts)
 	}
 
-	once.Do(
+	c.root.once.Do(
 		func() {
 			client, err := instantiateNewConnection(dbConfig, opts)
 			if err != nil {
-				errz = err
+				c.root.errz = err
 				return
 			}
-			singletonClient = client
+			c.root.singletonClient = client
 		},
 	)
-	return singletonClient, errz
+	return c.root.singletonClient, c.root.errz
 }
 
 func instantiateNewConnection(dbConfig DBConfig, options options) (*Client, error) {
